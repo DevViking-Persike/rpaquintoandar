@@ -37,6 +37,9 @@ class SearchSettings:
     city: str = "São Paulo"
     state: str = "SP"
     neighborhoods: list[str] = field(default_factory=list)
+    target_count: int = 0
+    apartment_only: bool = True
+    price_ranges: list[dict] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -106,6 +109,9 @@ def load_settings(config_path: str | Path = "config/settings.yaml") -> Settings:
             city=search.get("city", "São Paulo"),
             state=search.get("state", "SP"),
             neighborhoods=search.get("neighborhoods", []),
+            target_count=search.get("target_count", 0),
+            apartment_only=search.get("apartment_only", True),
+            price_ranges=search.get("price_ranges", []),
         )
 
     if persistence := raw.get("persistence"):

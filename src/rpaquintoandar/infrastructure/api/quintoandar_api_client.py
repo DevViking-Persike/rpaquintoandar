@@ -148,16 +148,29 @@ class QuintoAndarApiClient:
         return count
 
     async def search(
-        self, criteria: SearchCriteria, offset: int = 0
+        self,
+        criteria: SearchCriteria,
+        offset: int = 0,
+        neighborhood_slug: str | None = None,
+        property_type: str | None = None,
     ) -> tuple[list[Listing], int]:
-        slug = _build_slug(criteria)
         page_num = (offset // PAGE_SIZE) + 1
 
-        url = f"{SEARCH_BASE_URL}/{slug}"
+        if neighborhood_slug:
+            url = f"{SEARCH_BASE_URL}/{neighborhood_slug}"
+            if property_type:
+                url += f"/{property_type}"
+        else:
+            slug = _build_slug(criteria)
+            url = f"{SEARCH_BASE_URL}/{slug}"
+            if property_type:
+                url += f"/{property_type}"
+
         if page_num > 1:
             url += f"?pagina={page_num}"
 
-        logger.info("Playwright search page=%d slug=%s", page_num, slug)
+        display_slug = neighborhood_slug or _build_slug(criteria)
+        logger.info("Playwright search page=%d slug=%s", page_num, display_slug)
 
         if self._browser_manager is None:
             raise RuntimeError("Browser manager required for search")

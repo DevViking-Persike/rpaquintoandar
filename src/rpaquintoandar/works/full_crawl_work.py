@@ -16,16 +16,22 @@ class FullCrawlWork:
         container: Container,
         criteria: SearchCriteria,
         max_pages: int | None = None,
+        target_count: int | None = None,
     ) -> None:
         self._container = container
         self._criteria = criteria
         self._max_pages = max_pages
+        self._target_count = target_count
 
     async def execute(self) -> None:
         logger.info("Starting FullCrawlWork")
         metadata: dict = {"mode": "full-crawl"}
         if self._max_pages is not None:
             metadata["max_pages"] = self._max_pages
+
+        if self._target_count is not None:
+            metadata["segmented"] = True
+            metadata["target_count"] = self._target_count
 
         context = PipelineContext(
             container=self._container,

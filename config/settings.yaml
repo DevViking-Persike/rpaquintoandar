@@ -21,6 +21,14 @@ search:
   city: "São Paulo"
   state: "SP"
   neighborhoods: []
+  target_count: 1000
+  apartment_only: true
+  price_ranges:
+    - {max: 300000}
+    - {min: 300000, max: 500000}
+    - {min: 500000, max: 700000}
+    - {min: 700000, max: 1000000}
+    - {min: 1000000}
 
 persistence:
   database_path: "data/rpaquintoandar.db"

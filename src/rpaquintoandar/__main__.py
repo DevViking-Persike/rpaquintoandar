@@ -62,6 +62,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Max pages to crawl (overrides config)",
     )
+    parser.add_argument(
+        "--target",
+        type=int,
+        default=None,
+        help="Target number of listings for segmented search (enables neighborhood segmentation)",
+    )
     return parser.parse_args()
 
 
@@ -108,7 +114,12 @@ async def run(args: argparse.Namespace) -> None:
         elif args.mode == "resume":
             work = ResumeWork(container)
         else:
-            work = FullCrawlWork(container, criteria, max_pages=args.max_pages)
+            target = args.target or settings.search.target_count
+            work = FullCrawlWork(
+                container, criteria,
+                max_pages=args.max_pages,
+                target_count=target if target > 0 else None,
+            )
 
         await work.execute()
 

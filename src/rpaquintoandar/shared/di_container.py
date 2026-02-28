@@ -4,6 +4,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from rpaquintoandar.infrastructure.alerting.log_alerter import LogAlerter
+from rpaquintoandar.infrastructure.api.coordinates_collector import CoordinatesCollector
 from rpaquintoandar.infrastructure.api.quintoandar_api_client import QuintoAndarApiClient
 from rpaquintoandar.infrastructure.browser.detail_extractor.playwright_detail_extractor import (
     PlaywrightDetailExtractor,
@@ -33,6 +34,7 @@ class Container:
         self._db_manager: DatabaseManager | None = None
         self._browser_manager: PlaywrightBrowserManager | None = None
         self._api_client: QuintoAndarApiClient | None = None
+        self._coordinates_collector: CoordinatesCollector | None = None
 
     async def initialize(self) -> None:
         self._db_manager = DatabaseManager(self.settings.persistence.database_path)
@@ -70,6 +72,12 @@ class Container:
             self._browser_manager = PlaywrightBrowserManager(self.settings.browser)
             await self._browser_manager.start()
         return self._browser_manager
+
+    async def coordinates_collector(self) -> CoordinatesCollector:
+        if self._coordinates_collector is None:
+            bm = await self.browser_manager()
+            self._coordinates_collector = CoordinatesCollector(bm, self.settings.api)
+        return self._coordinates_collector
 
     async def detail_extractor(self) -> IDetailExtractor:
         bm = await self.browser_manager()
