@@ -8,8 +8,8 @@ import yaml
 
 @dataclass(slots=True)
 class ApiSettings:
-    search_url: str = (
-        "https://apigw.prod.quintoandar.com.br/house-listing-search/v2/search/list"
+    count_url: str = (
+        "https://apigw.prod.quintoandar.com.br/house-listing-search/v2/search/count"
     )
     timeout_seconds: float = 30.0
     delay_between_requests_ms: int = 1500
@@ -79,7 +79,7 @@ def load_settings(config_path: str | Path = "config/settings.yaml") -> Settings:
 
     if api := raw.get("api"):
         settings.api = ApiSettings(
-            search_url=api.get("search_url", settings.api.search_url),
+            count_url=api.get("count_url", settings.api.count_url),
             timeout_seconds=api.get("timeout_seconds", 30.0),
             delay_between_requests_ms=api.get("delay_between_requests_ms", 1500),
         )

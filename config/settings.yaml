@@ -1,5 +1,5 @@
 api:
-  search_url: "https://apigw.prod.quintoandar.com.br/house-listing-search/v2/search/list"
+  count_url: "https://apigw.prod.quintoandar.com.br/house-listing-search/v2/search/count"
   timeout_seconds: 30.0
   delay_between_requests_ms: 1500
 
