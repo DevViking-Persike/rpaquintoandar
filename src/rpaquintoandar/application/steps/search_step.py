@@ -18,7 +18,7 @@ class SearchStep:
     async def execute(self, context: PipelineContext) -> StepResult:
         result = StepResult()
         try:
-            api_client = context.container.api_client()
+            api_client = await context.container.api_client()
             repo = context.container.listing_repo()
             max_pages = context.metadata.get(
                 "max_pages", context.container.settings.scraping.max_pages

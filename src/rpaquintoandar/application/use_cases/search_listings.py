@@ -26,6 +26,9 @@ class SearchListingsUseCase:
         result = SearchResult()
 
         offset = 0
+        consecutive_no_new = 0
+        max_consecutive_no_new = 3
+
         for page in range(1, self._max_pages + 1):
             listings, total_count = await self._api_client.search(criteria, offset)
             result.total_found = total_count
@@ -46,9 +49,23 @@ class SearchListingsUseCase:
                 total_count,
             )
 
+            if new_count == 0:
+                consecutive_no_new += 1
+                if consecutive_no_new >= max_consecutive_no_new:
+                    logger.info(
+                        "Stopping: %d consecutive pages with no new listings",
+                        consecutive_no_new,
+                    )
+                    break
+            else:
+                consecutive_no_new = 0
+
             offset += PAGE_SIZE
-            if offset >= total_count:
+            if total_count > 0 and offset >= total_count:
                 logger.info("Reached end of results (offset=%d >= total=%d)", offset, total_count)
+                break
+            if len(listings) < PAGE_SIZE:
+                logger.info("Last page (got %d < %d), stopping", len(listings), PAGE_SIZE)
                 break
 
         logger.info(

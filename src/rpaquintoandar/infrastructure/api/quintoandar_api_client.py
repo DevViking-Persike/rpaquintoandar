@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import unicodedata
 from typing import Any
 
 import httpx
 
 from rpaquintoandar.domain.entities import Listing
+from rpaquintoandar.domain.interfaces import IBrowserManager
 from rpaquintoandar.domain.value_objects import SearchCriteria
 from rpaquintoandar.infrastructure.api.response_parser import parse_ssr_houses
 from rpaquintoandar.infrastructure.config.settings_loader import ApiSettings
@@ -25,15 +27,6 @@ DEFAULT_HEADERS = {
     "Referer": "https://www.quintoandar.com.br/",
 }
 
-SSR_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-}
-
 COUNT_URL = "https://apigw.prod.quintoandar.com.br/house-listing-search/v2/search/count"
 SEARCH_BASE_URL = "https://www.quintoandar.com.br/comprar/imovel"
 
@@ -41,8 +34,6 @@ PAGE_SIZE = 12
 
 
 def _normalize_slug(text: str) -> str:
-    import unicodedata
-
     nfkd = unicodedata.normalize("NFKD", text)
     ascii_text = nfkd.encode("ASCII", "ignore").decode("ASCII")
     return ascii_text.lower().replace(" ", "-")
@@ -55,8 +46,13 @@ def _build_slug(criteria: SearchCriteria) -> str:
 
 
 class QuintoAndarApiClient:
-    def __init__(self, settings: ApiSettings) -> None:
+    def __init__(
+        self,
+        settings: ApiSettings,
+        browser_manager: IBrowserManager | None = None,
+    ) -> None:
         self._settings = settings
+        self._browser_manager = browser_manager
         self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -154,24 +150,40 @@ class QuintoAndarApiClient:
     async def search(
         self, criteria: SearchCriteria, offset: int = 0
     ) -> tuple[list[Listing], int]:
-        client = await self._get_client()
         slug = _build_slug(criteria)
         page_num = (offset // PAGE_SIZE) + 1
 
         url = f"{SEARCH_BASE_URL}/{slug}"
-        params: dict[str, Any] = {}
         if page_num > 1:
-            params["pagina"] = page_num
+            url += f"?pagina={page_num}"
 
-        logger.info("SSR search page=%d slug=%s", page_num, slug)
-        response = await client.get(url, params=params, headers=SSR_HEADERS)
-        response.raise_for_status()
+        logger.info("Playwright search page=%d slug=%s", page_num, slug)
 
-        html = response.text
-        listings, total_count = self._extract_from_ssr(html)
+        if self._browser_manager is None:
+            raise RuntimeError("Browser manager required for search")
+
+        page = await self._browser_manager.new_page()
+        try:
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            await asyncio.sleep(1)
+
+            json_str = await page.evaluate(
+                """() => {
+                    const el = document.querySelector('script#__NEXT_DATA__');
+                    return el ? el.textContent : '';
+                }"""
+            )
+        finally:
+            await page.close()
+
+        if not json_str:
+            logger.warning("__NEXT_DATA__ not found in page (page=%d)", page_num)
+            return [], 0
+
+        listings, total_count = self._extract_from_json(json_str)
 
         logger.info(
-            "SSR response: %d listings, total=%d (page=%d)",
+            "Search response: %d listings, total=%d (page=%d)",
             len(listings),
             total_count,
             page_num,
@@ -183,19 +195,7 @@ class QuintoAndarApiClient:
         return listings, total_count
 
     @staticmethod
-    def _extract_from_ssr(html: str) -> tuple[list[Listing], int]:
-        marker = '<script id="__NEXT_DATA__" type="application/json">'
-        start = html.find(marker)
-        if start == -1:
-            logger.warning("__NEXT_DATA__ not found in SSR response")
-            return [], 0
-
-        start += len(marker)
-        end = html.find("</script>", start)
-        if end == -1:
-            return [], 0
-
-        json_str = html[start:end]
+    def _extract_from_json(json_str: str) -> tuple[list[Listing], int]:
         try:
             data = json.loads(json_str)
         except json.JSONDecodeError:
@@ -207,7 +207,7 @@ class QuintoAndarApiClient:
 
         listings = parse_ssr_houses(houses)
 
-        # Try to get total count from search.markers or count endpoint
+        # Try to get total count from search.markers
         search = initial.get("search", {})
         markers = search.get("markers", {})
         total = 0

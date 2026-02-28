@@ -19,7 +19,7 @@ class ListingDetailPage(BasePage):
     async def load_listing(self, listing_id: str) -> None:
         url = f"{self._detail_base_url}/{listing_id}"
         await self.navigate(url)
-        await self._page.wait_for_load_state("networkidle")
+        await self._page.wait_for_load_state("domcontentloaded")
 
     async def extract_next_data(self) -> str:
         result = await self._page.evaluate(

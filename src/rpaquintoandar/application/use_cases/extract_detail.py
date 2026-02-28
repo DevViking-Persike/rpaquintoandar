@@ -4,6 +4,7 @@ import json
 import logging
 
 from rpaquintoandar.application.dtos import ExtractResult
+from rpaquintoandar.domain.entities import Listing
 from rpaquintoandar.domain.enums import FurnishedStatus, ProcessingStatus
 from rpaquintoandar.domain.interfaces import IDetailExtractor, IListingRepository
 from rpaquintoandar.domain.value_objects import Address, ContentHash, Coordinates, PriceInfo
@@ -74,75 +75,91 @@ class ExtractDetailUseCase:
             logger.warning("Invalid JSON in __NEXT_DATA__ for %s", listing.source_id)
             return
 
-        props = data.get("props", {}).get("pageProps", {})
-        house = props.get("house", {}) or props.get("listing", {}) or {}
+        initial = data.get("props", {}).get("pageProps", {}).get("initialState", {})
+        house = initial.get("house", {}).get("houseInfo", {})
+        if not house:
+            logger.warning("No houseInfo in __NEXT_DATA__ for %s", listing.source_id)
+            return
 
-        if desc := house.get("description", ""):
+        # Description
+        if desc := house.get("remarks", ""):
             listing.description = desc
 
-        if building := house.get("buildingAmenities", []):
-            listing.building_amenities = [str(a) for a in building]
+        # Building amenities (installations = condominium features)
+        installations = house.get("installations", [])
+        if isinstance(installations, list):
+            listing.building_amenities = [
+                inst.get("text", inst.get("key", ""))
+                for inst in installations
+                if isinstance(inst, dict) and inst.get("value") == "SIM"
+            ]
 
-        if unit := house.get("unitAmenities", []):
-            listing.unit_amenities = [str(a) for a in unit]
+        # Unit amenities (comfort + practicality commodities)
+        unit_items: list[str] = []
+        for field in ("comfortCommodities", "practicalityCommodities"):
+            items = house.get(field, [])
+            if isinstance(items, list):
+                unit_items.extend(
+                    item.get("text", item.get("key", ""))
+                    for item in items
+                    if isinstance(item, dict) and item.get("value") == "SIM"
+                )
+        if unit_items:
+            listing.unit_amenities = unit_items
 
-        if (floor := house.get("floorNumber")) is not None:
-            try:
-                listing.floor_number = int(floor)
-            except (ValueError, TypeError):
-                pass
+        # Floor range
+        range_floor = house.get("rangeFloor")
+        if isinstance(range_floor, dict):
+            floor_min = range_floor.get("min")
+            if floor_min is not None:
+                try:
+                    listing.floor_number = int(floor_min)
+                except (ValueError, TypeError):
+                    pass
 
-        if (total_floors := house.get("totalFloors")) is not None:
-            try:
-                listing.total_floors = int(total_floors)
-            except (ValueError, TypeError):
-                pass
-
-        if (year := house.get("yearBuilt")) is not None:
+        # Construction year
+        if (year := house.get("constructionYear")) is not None:
             try:
                 listing.year_built = int(year)
             except (ValueError, TypeError):
                 pass
 
-        furnished_raw = house.get("furnished", "")
-        if furnished_raw:
-            mapping = {
-                "FURNISHED": FurnishedStatus.FURNISHED,
-                "SEMI_FURNISHED": FurnishedStatus.SEMI_FURNISHED,
-                "UNFURNISHED": FurnishedStatus.UNFURNISHED,
-            }
-            listing.furnished = mapping.get(
-                str(furnished_raw).upper(), FurnishedStatus.UNKNOWN
-            )
+        # Furnished
+        has_furniture = house.get("hasFurniture")
+        if has_furniture is True:
+            listing.furnished = FurnishedStatus.FURNISHED
+        elif has_furniture is False:
+            listing.furnished = FurnishedStatus.UNFURNISHED
 
-        if (pet := house.get("petFriendly")) is not None:
+        # Pet friendly
+        if (pet := house.get("acceptsPets")) is not None:
             listing.pet_friendly = bool(pet)
 
-        # Enrich address if data available
-        if addr_data := house.get("address", {}):
+        # Enrich address
+        addr_data = house.get("address")
+        if isinstance(addr_data, dict):
             listing.address = Address(
-                street=addr_data.get("street", listing.address.street),
-                number=addr_data.get("number", listing.address.number),
-                neighborhood=addr_data.get("neighbourhood", listing.address.neighborhood),
-                city=addr_data.get("city", listing.address.city),
-                state=addr_data.get("state", listing.address.state),
-                zip_code=addr_data.get("zipCode", listing.address.zip_code),
+                street=addr_data.get("street", listing.address.street) or "",
+                number=addr_data.get("number", listing.address.number) or "",
+                neighborhood=addr_data.get("neighborhood", listing.address.neighborhood) or "",
+                city=addr_data.get("city", listing.address.city) or "",
+                state=addr_data.get("stateAcronym", listing.address.state) or "",
+                zip_code=addr_data.get("zipCode", listing.address.zip_code) or "",
             )
+            # Coordinates from address
+            lat = addr_data.get("lat")
+            lng = addr_data.get("lng")
+            if lat and lng:
+                try:
+                    listing.coordinates = Coordinates(
+                        latitude=float(lat), longitude=float(lng)
+                    )
+                except (ValueError, TypeError):
+                    pass
 
-        # Enrich coordinates
-        lat = house.get("latitude")
-        lon = house.get("longitude")
-        if lat and lon:
-            try:
-                listing.coordinates = Coordinates(
-                    latitude=float(lat), longitude=float(lon)
-                )
-            except (ValueError, TypeError):
-                pass
-
-        # Enrich price
-        sale_price = house.get("salePrice") or house.get("sale_price")
-        condo = house.get("condoFee") or house.get("condo_fee")
+        # Enrich price with precise values
+        sale_price = house.get("salePrice")
+        condo = house.get("condoPrice")
         iptu = house.get("iptu")
         if sale_price is not None:
             listing.price = PriceInfo(
@@ -151,10 +168,13 @@ class ExtractDetailUseCase:
                 iptu=float(iptu) if iptu else listing.price.iptu,
             )
 
-        # Enrich images
-        if images := house.get("imageList", []) or house.get("images", []):
-            if isinstance(images, list):
-                listing.images = [
-                    img if isinstance(img, str) else img.get("url", "")
-                    for img in images
-                ]
+        # Enrich photos with full URLs
+        photos = house.get("photos", [])
+        if isinstance(photos, list) and photos:
+            photo_base = "https://www.quintoandar.com.br/img/med/"
+            listing.images = [
+                f"{photo_base}{p['url']}" if isinstance(p, dict) and not p.get("url", "").startswith("http")
+                else (p.get("url", "") if isinstance(p, dict) else str(p))
+                for p in photos
+                if isinstance(p, dict) and p.get("url")
+            ]

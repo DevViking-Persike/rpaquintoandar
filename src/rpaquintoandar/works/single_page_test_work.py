@@ -15,7 +15,7 @@ class SinglePageTestWork:
 
     async def execute(self) -> None:
         logger.info("Starting SinglePageTestWork (test-search)")
-        api_client = self._container.api_client()
+        api_client = await self._container.api_client()
         listings, total_count = await api_client.search(self._criteria, offset=0)
 
         print(f"\n{'='*60}")

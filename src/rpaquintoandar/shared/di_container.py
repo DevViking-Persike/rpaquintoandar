@@ -59,9 +59,10 @@ class Container:
     def execution_repo(self) -> IExecutionRepository:
         return SqliteExecutionRepo(self.db_manager)
 
-    def api_client(self) -> ISearchApiClient:
+    async def api_client(self) -> ISearchApiClient:
         if self._api_client is None:
-            self._api_client = QuintoAndarApiClient(self.settings.api)
+            bm = await self.browser_manager()
+            self._api_client = QuintoAndarApiClient(self.settings.api, bm)
         return self._api_client
 
     async def browser_manager(self) -> IBrowserManager:
