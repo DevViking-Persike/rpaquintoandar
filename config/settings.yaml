@@ -1,0 +1,35 @@
+api:
+  search_url: "https://apigw.prod.quintoandar.com.br/house-listing-search/v2/search/list"
+  timeout_seconds: 30.0
+  delay_between_requests_ms: 1500
+
+browser:
+  headless: true
+  timeout_ms: 30000
+  slow_mo_ms: 100
+  viewport:
+    width: 1280
+    height: 720
+
+scraping:
+  detail_base_url: "https://www.quintoandar.com.br/imovel"
+  max_pages: 50
+  retry_attempts: 3
+  retry_delay_ms: 3000
+
+search:
+  city: "São Paulo"
+  state: "SP"
+  neighborhoods: []
+
+persistence:
+  database_path: "data/rpaquintoandar.db"
+
+export:
+  output_dir: "data/export"
+  formats:
+    - json
+
+logging:
+  level: "INFO"
+  file: "data/rpaquintoandar.log"
